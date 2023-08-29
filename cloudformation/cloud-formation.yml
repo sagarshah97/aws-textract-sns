@@ -1,0 +1,272 @@
+Resources:
+  ExpenseReimbursementBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: expense-reimbursement
+      AccessControl: Private
+
+  ReimbursementNotifications:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: EasyClaim-Reimbursements
+
+  SNSSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Protocol: email
+      Endpoint: sagar.23723@gmail.com
+      TopicArn:
+        Ref: ReimbursementNotifications
+
+  DynamoDBTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: expense-log
+      AttributeDefinitions:
+        - AttributeName: pk
+          AttributeType: S
+      KeySchema:
+        - AttributeName: pk
+          KeyType: HASH
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  TextractLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: textractPython
+      Code:
+        S3Bucket: lambdas-sagarshah
+        S3Key: textract-python-lambda.zip
+      Handler: lambda_function.lambda_handler
+      Role: arn:aws:iam::788520884685:role/LabRole
+      Runtime: python3.9
+      Timeout: 30
+      Environment:
+        Variables:
+          SNS_TOPICARN: !Ref ReimbursementNotifications
+
+  DynamoDBLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: expenseLogPython
+      Code:
+        S3Bucket: lambdas-sagarshah
+        S3Key: expenselog-python-lambda.zip
+      Handler: lambda_function.lambda_handler
+      Role: arn:aws:iam::788520884685:role/LabRole
+      Runtime: python3.9
+      Timeout: 30
+
+  TextractApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: textract-analysis-api
+      EndpointConfiguration:
+        Types:
+          - REGIONAL
+
+  GatewayResponse4:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      ResponseType: DEFAULT_4XX
+      RestApiId:
+        Ref: TextractApiGateway
+      StatusCode: "200"
+
+  GatewayResponse5:
+    Type: AWS::ApiGateway::GatewayResponse
+    Properties:
+      ResponseParameters:
+        gatewayresponse.header.Access-Control-Allow-Origin: "'*'"
+        gatewayresponse.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+        gatewayresponse.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+      ResponseType: DEFAULT_5XX
+      RestApiId:
+        Ref: TextractApiGateway
+      StatusCode: "200"
+
+  TextractApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId:
+        Ref: TextractApiGateway
+      ParentId:
+        Fn::GetAtt: [TextractApiGateway, RootResourceId]
+      PathPart: extract
+
+  TextractApiMethodOptions:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Ref: TextractApiGateway
+      ResourceId:
+        Ref: TextractApiResource
+      HttpMethod: OPTIONS
+      AuthorizationType: NONE
+      Integration:
+        Type: MOCK
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+            ResponseTemplates:
+              application/json: "{}"
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+          ResponseModels:
+            application/json: Empty
+
+  TextractApiMethodPost:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId:
+        Ref: TextractApiGateway
+      ResourceId:
+        Ref: TextractApiResource
+      HttpMethod: POST
+      AuthorizationType: NONE
+      ApiKeyRequired: true
+      Integration:
+        Type: AWS
+        IntegrationHttpMethod: POST
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${TextractLambda.Arn}/invocations"
+        IntegrationResponses:
+          - StatusCode: "200"
+            ResponseParameters:
+              method.response.header.Access-Control-Allow-Headers: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token'"
+              method.response.header.Access-Control-Allow-Methods: "'OPTIONS,POST'"
+              method.response.header.Access-Control-Allow-Origin: "'*'"
+        Credentials: arn:aws:iam::788520884685:role/LabRole
+      MethodResponses:
+        - StatusCode: "200"
+          ResponseModels:
+            application/json: Empty
+          ResponseParameters:
+            method.response.header.Access-Control-Allow-Headers: false
+            method.response.header.Access-Control-Allow-Methods: false
+            method.response.header.Access-Control-Allow-Origin: false
+
+  TextractUsagePlan:
+    Type: AWS::ApiGateway::UsagePlan
+    Properties:
+      ApiStages:
+        - ApiId:
+            Ref: TextractApiGateway
+          Stage:
+            Ref: TextractApiStage
+      UsagePlanName: TextractUsagePlan
+
+  TextractUsagePlanKey:
+    Type: AWS::ApiGateway::UsagePlanKey
+    Properties:
+      KeyId:
+        Ref: TextractApiKey
+      KeyType: API_KEY
+      UsagePlanId:
+        Ref: TextractUsagePlan
+
+  TextractApiKey:
+    Type: AWS::ApiGateway::ApiKey
+    Properties:
+      Name: textract-key
+      Description: API Key for textract-analysis-api API Gateway
+      Enabled: true
+      GenerateDistinctId: true
+
+  TextractApiStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      DeploymentId: !Ref TextractApiDeployment
+      RestApiId: !Ref TextractApiGateway
+      StageName: dev
+
+  TextractApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref TextractApiGateway
+    DependsOn:
+      - TextractApiMethodPost
+
+  FetchApiKeyLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: fetchApiKeyPython
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: arn:aws:iam::788520884685:role/LabRole
+      Code:
+        ZipFile: |
+          import boto3
+          import cfnresponse
+
+          def lambda_handler(event, context):
+              try:
+                  apigateway_client = boto3.client('apigateway')
+
+                  api_key_id = event['ResourceProperties']['ApiKeyId']
+                  response = apigateway_client.get_api_key(apiKey=api_key_id, includeValue=True)
+                  api_key_value = response['value']
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {"APIKeyValue": api_key_value})
+              except Exception as e:
+                  cfnresponse.send(event, context, cfnresponse.FAILED, {"Error": str(e)})
+
+  CustomResource:
+    Type: Custom::InvokeFetchApiKeyPython
+    Properties:
+      ServiceToken: !GetAtt FetchApiKeyLambda.Arn
+      ApiKeyId: !Ref TextractApiKey
+
+  SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Security group for the Textract EC2 instance
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  TextractFrontend:
+    Type: AWS::EC2::Instance
+    Properties:
+      InstanceType: t2.micro
+      ImageId: ami-053b0d53c279acc90
+      KeyName: vockey
+      SecurityGroupIds:
+        - !Ref SecurityGroup
+      Tags:
+        - Key: Name
+          Value: TextractFrontend
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          sudo apt-get update -y
+          sudo apt install git -y
+          sudo apt-get install -y nodejs npm
+          sudo apt-get install -y nginx
+          git clone https://gitlab-ci-token:glpat-bb71uVx9Vd6cNGK4XC6C@git.cs.dal.ca/spshah/aws-textract.git /home/ubuntu/app
+          cd /home/ubuntu/app
+          sed -i "s|REACT_APP_AWS_API_GATEWAY=.*|REACT_APP_AWS_API_GATEWAY=https://${TextractApiGateway}.execute-api.${AWS::Region}.amazonaws.com/dev/extract|" .env
+          sed -i "s|REACT_APP_AWS_API_KEY=.*|REACT_APP_AWS_API_KEY=${CustomResource.APIKeyValue}|" .env
+          npm install
+          npm run build
+          sudo rm -rf /var/www/html/*
+          sudo cp -r build/* /var/www/html/
+          sudo systemctl start nginx
+
+Outputs:
+  EC2PublicIp:
+    Value: !GetAtt TextractFrontend.PublicIp
+    Description: EC2 Instance Public IP for Textract
