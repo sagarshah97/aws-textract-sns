@@ -17,7 +17,7 @@ Easy Claim aims to achieve the following goals:
 - Automate text extraction from bill images, facilitating 95% reduction in manual data entry efforts.
 - Enable real-time notifications to administrators through SNS, leading to a 50% decrease in processing time.
 - Offer a user-friendly ReactJS frontend for easy navigation and 40% faster claim submissions.
-- Ensure data security with API Gateway and AWS Key for secure access control.
+- Ensure data security with API Gateway and API Key for secure access control.
 - Attain 100% automation in AWS Cloud infrastructure setup via CloudFormation templates, eliminating manual configuration.
 
 ## Built with:
